@@ -84,6 +84,7 @@ export default function RefillLedger() {
   const [editingProfile, setEditingProfile] = useState(null);
   const [showAddMed, setShowAddMed] = useState(false);
   const [editingMed, setEditingMed] = useState(null);
+  const [newScriptMed, setNewScriptMed] = useState(null);
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
@@ -155,15 +156,35 @@ export default function RefillLedger() {
   }
 
   function markRefilled(med) {
+    if (med.repeatsRemaining <= 0) {
+      showToast("No repeats left — use \"New script from doctor\" instead");
+      return;
+    }
     const history = med.history || [];
     const updated = {
       ...med,
       lastFilledDate: todayISO(),
       repeatsRemaining: Math.max(0, med.repeatsRemaining - 1),
-      history: [...history, { date: todayISO(), action: "Refilled" }],
+      history: [...history, { date: todayISO(), action: "Collected next box" }],
     };
     saveMed(updated);
-    showToast(`${med.name} marked as refilled today`);
+    showToast(`${med.name}: next box collected, repeats decreased by 1`);
+  }
+
+  function logNewScript(med, newRepeats, filledDate) {
+    const history = med.history || [];
+    const updated = {
+      ...med,
+      lastFilledDate: filledDate,
+      repeatsRemaining: newRepeats,
+      history: [
+        ...history,
+        { date: todayISO(), action: `New script from doctor (${newRepeats} repeats)` },
+      ],
+    };
+    saveMed(updated);
+    setNewScriptMed(null);
+    showToast(`${med.name}: new script logged with ${newRepeats} repeats`);
   }
 
   function downloadCalendar(scopeProfileId) {
@@ -297,6 +318,7 @@ export default function RefillLedger() {
                           {s.status === "overdue" && "Overdue"}
                           {s.status === "soon" && "Refill soon"}
                           {s.status === "doctor" && "See doctor"}
+                          {s.status === "lastbox" && "Last box \u2014 no repeats"}
                           {s.status === "ok" && "On track"}
                         </span>
                       </div>
@@ -317,9 +339,23 @@ export default function RefillLedger() {
                       </div>
 
                       <div className="med-actions">
-                        <button className="btn btn-primary small" onClick={() => markRefilled(med)}>
-                          Mark as refilled today
-                        </button>
+                        {med.repeatsRemaining > 0 ? (
+                          <button className="btn btn-primary small" onClick={() => markRefilled(med)}>
+                            Collected next box
+                          </button>
+                        ) : (
+                          <button
+                            className="btn btn-primary small"
+                            onClick={() => setNewScriptMed(med)}
+                          >
+                            New script from doctor
+                          </button>
+                        )}
+                        {med.repeatsRemaining > 0 && (
+                          <button className="link-btn" onClick={() => setNewScriptMed(med)}>
+                            log new script instead
+                          </button>
+                        )}
                         <button className="link-btn" onClick={() => setEditingMed(med)}>
                           edit
                         </button>
@@ -356,6 +392,14 @@ export default function RefillLedger() {
             setEditingMed(null);
           }}
           onSave={saveMed}
+        />
+      )}
+
+      {newScriptMed && (
+        <NewScriptModal
+          med={newScriptMed}
+          onCancel={() => setNewScriptMed(null)}
+          onConfirm={(repeats, filledDate) => logNewScript(newScriptMed, repeats, filledDate)}
         />
       )}
 
@@ -456,7 +500,7 @@ function MedForm({ initial, profileId, onCancel, onSave }) {
       name: "",
       tabletsPerBox: 30,
       tabletsPerDay: 1,
-      repeatsRemaining: 3,
+      repeatsRemaining: 6,
       lastFilledDate: todayISO(),
       refillThresholdDays: 7,
       doctorThresholdDays: 14,
@@ -516,6 +560,44 @@ function MedForm({ initial, profileId, onCancel, onSave }) {
         </button>
         <button className="btn btn-primary" disabled={!canSave} onClick={() => canSave && onSave(form)}>
           Save medication
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function NewScriptModal({ med, onCancel, onConfirm }) {
+  const [repeats, setRepeats] = useState(6);
+  const [filledDate, setFilledDate] = useState(todayISO());
+
+  return (
+    <Modal title={`New script for ${med.name}`} onClose={onCancel}>
+      <p className="field-hint" style={{ marginTop: 0 }}>
+        Use this when the doctor issues a brand new script — separate from just
+        collecting the next box on an existing script's repeats.
+      </p>
+      <label className="field-label">Repeats on the new script</label>
+      <input
+        type="number"
+        min="0"
+        className="field-input"
+        value={repeats}
+        onChange={(e) => setRepeats(Number(e.target.value))}
+        autoFocus
+      />
+      <label className="field-label">Date this box was collected</label>
+      <input
+        type="date"
+        className="field-input"
+        value={filledDate}
+        onChange={(e) => setFilledDate(e.target.value)}
+      />
+      <div className="modal-actions">
+        <button className="btn btn-ghost" onClick={onCancel}>
+          Cancel
+        </button>
+        <button className="btn btn-primary" onClick={() => onConfirm(repeats, filledDate)}>
+          Save new script
         </button>
       </div>
     </Modal>
@@ -588,6 +670,7 @@ const CSS = `
 .med-card.status-soon { border-top-color: #D2952E; }
 .med-card.status-overdue { border-top-color: var(--rust); }
 .med-card.status-doctor { border-top-color: #8B4FA0; }
+.med-card.status-lastbox { border-top-color: #6B7A99; }
 .med-card-top { display:flex; justify-content:space-between; align-items:flex-start; gap:0.5rem; margin-bottom:0.7rem; }
 .med-card h3 { font-family:'Fraunces', serif; font-size:1.05rem; font-weight:600; margin:0 0 0.2rem; }
 .med-sub { margin:0; font-size:0.8rem; color: var(--ink-soft); }
@@ -596,6 +679,7 @@ const CSS = `
 .status-pill.status-soon { background:#FBEBCB; color:#8A5A0E; }
 .status-pill.status-overdue { background: var(--rust-soft); color: var(--rust); }
 .status-pill.status-doctor { background:#EFE0F5; color:#7A3B90; }
+.status-pill.status-lastbox { background:#E3E7EF; color:#4B5A78; }
 .status-pill.status-ok { background:#E1EEE8; color: var(--sage-dark); }
 
 .tablet-grid { display:flex; flex-wrap:wrap; gap:3px; margin:0.6rem 0 0.8rem; }

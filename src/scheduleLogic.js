@@ -80,8 +80,14 @@ export function computeSchedule(med) {
   let status = "ok";
   if (daysLeft <= 0) status = "overdue";
   else if (daysLeft <= med.refillThresholdDays) status = "soon";
-  if (med.repeatsRemaining === 0 && daysBetween(todayISO(), finalRunOut) <= med.doctorThresholdDays)
-    status = status === "overdue" ? "overdue" : "doctor";
+
+  // Zero repeats left changes what "refilling" even means (there's no more
+  // pharmacy refill available — only a new script from the doctor can fix
+  // this), so it should show as its own state persistently, not only once
+  // you're close to running out.
+  if (med.repeatsRemaining === 0 && status !== "overdue") {
+    status = daysBetween(todayISO(), finalRunOut) <= med.doctorThresholdDays ? "doctor" : "lastbox";
+  }
 
   return {
     daysPerBox: daysPerBoxRounded,
@@ -89,6 +95,7 @@ export function computeSchedule(med) {
     currentRunOut,
     daysLeft,
     status,
+    noRepeatsLeft: med.repeatsRemaining === 0,
     reminders,
   };
 }
