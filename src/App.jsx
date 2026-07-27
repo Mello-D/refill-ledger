@@ -100,20 +100,28 @@ function IconEscript({ size = 14 }) {
   );
 }
 
-function TabletGrid({ total, remaining }) {
+function TabletGrid({ total, remaining, unit = "tablets" }) {
+  if (unit === "ml") {
+    return (
+      <div className="tablet-count">
+        <span className="tablet-count-num">{Math.round(remaining * 10) / 10}</span>
+        <span className="tablet-count-of"> / {total} mL</span>
+      </div>
+    );
+  }
   const cap = 40;
   const showCount = total > cap;
   if (showCount) {
     return (
       <div className="tablet-count">
-        <span className="tablet-count-num">{remaining}</span>
+        <span className="tablet-count-num">{Math.round(remaining)}</span>
         <span className="tablet-count-of"> / {total} tablets</span>
       </div>
     );
   }
   const dots = [];
   for (let i = 0; i < total; i++) {
-    dots.push(<span key={i} className={"tab-dot" + (i < remaining ? " filled" : "")} />);
+    dots.push(<span key={i} className={"tab-dot" + (i < Math.round(remaining) ? " filled" : "")} />);
   }
   return <div className="tablet-grid">{dots}</div>;
 }
@@ -310,7 +318,6 @@ export default function RefillLedger() {
               windowDays={windowDays}
               setWindowDays={setWindowDays}
               onSelectProfile={setActiveProfileId}
-              onAddProfile={() => setShowAddProfile(true)}
             />
           )}
 
@@ -390,8 +397,14 @@ export default function RefillLedger() {
                             </span>
                           </h3>
                           <p className="med-sub">
-                            {med.tabletsPerDay} tablet{med.tabletsPerDay !== 1 ? "s" : ""}/day ·{" "}
-                            {med.tabletsPerBox} per box · {med.repeatsRemaining} repeat
+                            {med.unit === "ml"
+                              ? `${med.tabletsPerDay} mL/day`
+                              : `${med.tabletsPerDay} tablet${med.tabletsPerDay !== 1 ? "s" : ""}/day`}{" "}
+                            ·{" "}
+                            {med.unit === "ml"
+                              ? `${med.tabletsPerBox} mL per box`
+                              : `${med.tabletsPerBox} per box`}{" "}
+                            · {med.repeatsRemaining} repeat
                             {med.repeatsRemaining !== 1 ? "s" : ""} left
                           </p>
                         </div>
@@ -404,7 +417,11 @@ export default function RefillLedger() {
                         </span>
                       </div>
 
-                      <TabletGrid total={med.tabletsPerBox} remaining={s.tabletsRemaining} />
+                      <TabletGrid
+                        total={med.tabletsPerBox}
+                        remaining={s.tabletsRemaining}
+                        unit={med.unit || "tablets"}
+                      />
 
                       <div className="med-meta">
                         <div>
@@ -489,7 +506,7 @@ export default function RefillLedger() {
   );
 }
 
-function Dashboard({ data, windowDays, setWindowDays, onSelectProfile, onAddProfile }) {
+function Dashboard({ data, windowDays, setWindowDays, onSelectProfile }) {
   const today = todayISO();
 
   const upcoming = [];
@@ -498,7 +515,11 @@ function Dashboard({ data, windowDays, setWindowDays, onSelectProfile, onAddProf
     const schedule = computeSchedule(med);
     schedule.reminders.forEach((r) => {
       const diff = daysBetween(today, r.date);
-      if (diff >= 0 && diff <= windowDays) {
+      // Include anything already due (diff can be negative) as well as
+      // anything due within the window — a reminder whose date has passed
+      // but hasn't been actioned yet is still relevant and shouldn't be
+      // hidden in favour of showing the *next* repeat's later reminder.
+      if (diff <= windowDays) {
         upcoming.push({
           date: r.date,
           diff,
@@ -515,34 +536,9 @@ function Dashboard({ data, windowDays, setWindowDays, onSelectProfile, onAddProf
 
   return (
     <div className="dashboard">
-      <div className="section-row">
-        <h2>Household overview</h2>
-        <div className="section-actions">
-          <button className="btn btn-primary small" onClick={onAddProfile}>
-            + Add person or pet
-          </button>
-        </div>
-      </div>
-
       {data.profiles.length === 0 && (
         <div className="empty-state">
-          <p>No profiles yet. Add yourself, a family member, or a pet to begin.</p>
-          <button className="btn btn-primary" onClick={onAddProfile}>
-            Add your first profile
-          </button>
-        </div>
-      )}
-
-      {data.profiles.length > 0 && (
-        <div className="profile-chip-row">
-          {data.profiles.map((p) => (
-            <button key={p.id} className="profile-jump-chip" onClick={() => onSelectProfile(p.id)}>
-              <span className="profile-icon">
-                {p.type === "pet" ? <IconPaw size={14} /> : <IconPerson size={14} />}
-              </span>
-              {p.name}
-            </button>
-          ))}
+          <p>No profiles yet — add one from the sidebar to begin.</p>
         </div>
       )}
 
@@ -581,11 +577,19 @@ function Dashboard({ data, windowDays, setWindowDays, onSelectProfile, onAddProf
             </thead>
             <tbody>
               {upcoming.map((item, idx) => (
-                <tr key={idx} onClick={() => onSelectProfile(item.profileId)}>
+                <tr
+                  key={idx}
+                  className={item.diff < 0 ? "row-overdue" : ""}
+                  onClick={() => onSelectProfile(item.profileId)}
+                >
                   <td>
                     {formatDisplayDate(item.date)}
                     <span className="days-away">
-                      {item.diff === 0 ? "today" : `in ${item.diff}d`}
+                      {item.diff < 0
+                        ? `overdue by ${-item.diff}d`
+                        : item.diff === 0
+                        ? "today"
+                        : `in ${item.diff}d`}
                     </span>
                   </td>
                   <td>{item.profileName}</td>
@@ -702,6 +706,7 @@ function MedForm({ initial, profileId, onCancel, onSave }) {
       refillThresholdDays: 7,
       doctorThresholdDays: 14,
       scriptType: "escript",
+      unit: "tablets",
       history: [],
     }
   );
@@ -713,6 +718,7 @@ function MedForm({ initial, profileId, onCancel, onSave }) {
   };
 
   const canSave = form.name.trim() && form.tabletsPerBox > 0 && form.tabletsPerDay > 0;
+  const isMl = form.unit === "ml";
 
   return (
     <Modal title={initial ? "Edit medication" : "Add medication"} onClose={onCancel}>
@@ -735,14 +741,44 @@ function MedForm({ initial, profileId, onCancel, onSave }) {
         </button>
       </div>
 
+      <label className="field-label">Dose measured in</label>
+      <div className="radio-row">
+        <button
+          className={"radio-btn" + (!isMl ? " active" : "")}
+          onClick={() => setForm({ ...form, unit: "tablets" })}
+        >
+          Tablets
+        </button>
+        <button
+          className={"radio-btn" + (isMl ? " active" : "")}
+          onClick={() => setForm({ ...form, unit: "ml" })}
+        >
+          mL (liquid)
+        </button>
+      </div>
+
       <div className="field-row">
         <div>
-          <label className="field-label">Tablets per box</label>
-          <input type="number" min="1" className="field-input" value={form.tabletsPerBox} onChange={set("tabletsPerBox")} />
+          <label className="field-label">{isMl ? "Amount per box (mL)" : "Tablets per box"}</label>
+          <input
+            type="number"
+            min="0.1"
+            step={isMl ? "0.1" : "1"}
+            className="field-input"
+            value={form.tabletsPerBox}
+            onChange={set("tabletsPerBox")}
+          />
         </div>
         <div>
-          <label className="field-label">Tablets per day</label>
-          <input type="number" min="0.25" step="0.25" className="field-input" value={form.tabletsPerDay} onChange={set("tabletsPerDay")} />
+          <label className="field-label">{isMl ? "Amount per day (mL)" : "Tablets per day"}</label>
+          <input
+            type="number"
+            min="0.1"
+            step={isMl ? "0.1" : "0.25"}
+            className="field-input"
+            value={form.tabletsPerDay}
+            onChange={set("tabletsPerDay")}
+          />
         </div>
       </div>
 
@@ -895,6 +931,8 @@ const CSS = `
 .upcoming-table tbody tr:hover { background: var(--surface-alt); }
 .upcoming-table td { padding:0.65rem 0.9rem; vertical-align:middle; }
 .days-away { display:block; font-size:0.72rem; color: var(--ink-soft); margin-top:0.1rem; }
+.upcoming-table tr.row-overdue { background: #FBEFEA; }
+.upcoming-table tr.row-overdue .days-away { color: var(--rust); font-weight:600; }
 .action-chip { font-size:0.72rem; font-weight:600; padding:0.2rem 0.55rem; border-radius:99px; }
 .action-chip.action-refill { background:#E1EEE8; color: var(--sage-dark); }
 .action-chip.action-doctor { background:#EFE0F5; color:#7A3B90; }

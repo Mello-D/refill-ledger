@@ -72,7 +72,7 @@ export function computeSchedule(med) {
 
   const daysPerBoxRounded = Math.round(daysPerBox * 10) / 10;
   const daysSinceFill = daysBetween(med.lastFilledDate, todayISO());
-  const tabletsUsed = Math.max(0, Math.floor(daysSinceFill * med.tabletsPerDay));
+  const tabletsUsed = Math.max(0, daysSinceFill * med.tabletsPerDay);
   const tabletsRemaining = Math.max(0, med.tabletsPerBox - tabletsUsed);
   const currentRunOut = addDays(med.lastFilledDate, daysPerBox);
   const daysLeft = daysBetween(todayISO(), currentRunOut);
