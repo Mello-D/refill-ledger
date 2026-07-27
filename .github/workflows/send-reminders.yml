@@ -1,0 +1,30 @@
+name: Send refill reminder emails
+
+on:
+  schedule:
+    # Runs daily at 07:00 UTC. GitHub Actions cron times are always UTC, so
+    # adjust the hour below for your timezone if you want it to land at a
+    # specific local time (Brisbane/AEST is UTC+10, no daylight saving, so
+    # 07:00 UTC = 5:00pm AEST — change to taste).
+    - cron: "0 7 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  send-reminders:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm install
+
+      - run: node scripts/send-reminders.mjs
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          HOUSEHOLD_CODE: ${{ secrets.HOUSEHOLD_CODE }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
