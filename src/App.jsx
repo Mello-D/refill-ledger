@@ -57,6 +57,29 @@ function IconPaw({ size = 18 }) {
     </svg>
   );
 }
+function IconPaperScript({ size = 14 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <path
+        d="M6 3h9l3 3v15a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path d="M15 3v3h3" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M8 11h8M8 14.5h8M8 18h5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+function IconEscript({ size = 14 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <rect x="3" y="5" width="18" height="13" rx="2" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M3 8h18" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M7 12.5l2 2 2-2M13 14.5l2-2 2 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 function TabletGrid({ total, remaining }) {
   const cap = 40;
@@ -304,10 +327,28 @@ export default function RefillLedger() {
                   const s = computeSchedule(med);
                   const nextReminder = s.reminders.find((r) => r.date >= todayISO()) || s.reminders[0];
                   return (
-                    <div key={med.id} className={"med-card status-" + s.status}>
+                    <div
+                      key={med.id}
+                      className={
+                        "med-card status-" + s.status + " script-" + (med.scriptType || "escript")
+                      }
+                    >
                       <div className="med-card-top">
                         <div>
-                          <h3>{med.name}</h3>
+                          <h3>
+                            {med.name}
+                            <span className={"script-chip script-" + (med.scriptType || "escript")}>
+                              {med.scriptType === "paper" ? (
+                                <>
+                                  <IconPaperScript size={12} /> Paper
+                                </>
+                              ) : (
+                                <>
+                                  <IconEscript size={12} /> eScript
+                                </>
+                              )}
+                            </span>
+                          </h3>
                           <p className="med-sub">
                             {med.tabletsPerDay} tablet{med.tabletsPerDay !== 1 ? "s" : ""}/day ·{" "}
                             {med.tabletsPerBox} per box · {med.repeatsRemaining} repeat
@@ -504,6 +545,7 @@ function MedForm({ initial, profileId, onCancel, onSave }) {
       lastFilledDate: todayISO(),
       refillThresholdDays: 7,
       doctorThresholdDays: 14,
+      scriptType: "escript",
       history: [],
     }
   );
@@ -520,6 +562,22 @@ function MedForm({ initial, profileId, onCancel, onSave }) {
     <Modal title={initial ? "Edit medication" : "Add medication"} onClose={onCancel}>
       <label className="field-label">Medication name</label>
       <input className="field-input" placeholder="e.g. Atorvastatin 20mg" value={form.name} onChange={set("name")} autoFocus />
+
+      <label className="field-label">Script type</label>
+      <div className="radio-row">
+        <button
+          className={"radio-btn" + (form.scriptType !== "paper" ? " active" : "")}
+          onClick={() => setForm({ ...form, scriptType: "escript" })}
+        >
+          <IconEscript size={16} /> eScript
+        </button>
+        <button
+          className={"radio-btn" + (form.scriptType === "paper" ? " active" : "")}
+          onClick={() => setForm({ ...form, scriptType: "paper" })}
+        >
+          <IconPaperScript size={16} /> Paper
+        </button>
+      </div>
 
       <div className="field-row">
         <div>
@@ -671,8 +729,13 @@ const CSS = `
 .med-card.status-overdue { border-top-color: var(--rust); }
 .med-card.status-doctor { border-top-color: #8B4FA0; }
 .med-card.status-lastbox { border-top-color: #6B7A99; }
+.med-card.script-paper { box-shadow: inset 4px 0 0 #C9A66B; }
+.med-card.script-escript { box-shadow: inset 4px 0 0 #4A7FAE; }
 .med-card-top { display:flex; justify-content:space-between; align-items:flex-start; gap:0.5rem; margin-bottom:0.7rem; }
 .med-card h3 { font-family:'Fraunces', serif; font-size:1.05rem; font-weight:600; margin:0 0 0.2rem; }
+.script-chip { display:inline-flex; align-items:center; gap:0.25rem; font-size:0.62rem; font-weight:700; letter-spacing:0.03em; text-transform:uppercase; padding:0.15rem 0.45rem; border-radius:99px; margin-left:0.5rem; vertical-align:middle; }
+.script-chip.script-paper { background:#F1E6D2; color:#8A6A34; }
+.script-chip.script-escript { background:#DCEAF2; color:#2C5C78; }
 .med-sub { margin:0; font-size:0.8rem; color: var(--ink-soft); }
 
 .status-pill { font-size:0.72rem; font-weight:600; padding:0.25rem 0.6rem; border-radius:99px; white-space:nowrap; background: var(--surface-alt); color: var(--ink-soft); }
