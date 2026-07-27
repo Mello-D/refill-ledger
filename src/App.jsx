@@ -46,6 +46,25 @@ function IconPerson({ size = 18 }) {
     </svg>
   );
 }
+function IconHome({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <path
+        d="M4 11.5 12 4l8 7.5"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M6 10v9a1 1 0 0 0 1 1h4v-5h2v5h4a1 1 0 0 0 1-1v-9"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 function IconPaw({ size = 18 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
@@ -109,11 +128,13 @@ export default function RefillLedger() {
   const [editingMed, setEditingMed] = useState(null);
   const [newScriptMed, setNewScriptMed] = useState(null);
   const [toast, setToast] = useState(null);
+  const [windowDays, setWindowDays] = useState(14);
 
   useEffect(() => {
     loadData().then((d) => {
       setData(d);
-      if (d.profiles.length) setActiveProfileId(d.profiles[0].id);
+      // Land on the dashboard (activeProfileId stays null) rather than
+      // jumping straight into whichever profile happens to be first.
     });
   }, []);
 
@@ -159,7 +180,7 @@ export default function RefillLedger() {
     };
     persist(next);
     if (activeProfileId === id) {
-      setActiveProfileId(next.profiles[0]?.id || null);
+      setActiveProfileId(null);
     }
   }
 
@@ -256,6 +277,15 @@ export default function RefillLedger() {
 
       <div className="rl-body">
         <nav className="rl-profiles">
+          <button
+            className={"profile-tab" + (activeProfileId === null ? " active" : "")}
+            onClick={() => setActiveProfileId(null)}
+          >
+            <span className="profile-icon">
+              <IconHome size={16} />
+            </span>
+            Home
+          </button>
           {profiles.map((p) => (
             <button
               key={p.id}
@@ -274,11 +304,21 @@ export default function RefillLedger() {
         </nav>
 
         <main className="rl-main">
-          {!activeProfile && (
+          {activeProfileId === null && (
+            <Dashboard
+              data={data}
+              windowDays={windowDays}
+              setWindowDays={setWindowDays}
+              onSelectProfile={setActiveProfileId}
+              onAddProfile={() => setShowAddProfile(true)}
+            />
+          )}
+
+          {activeProfileId !== null && !activeProfile && (
             <div className="empty-state">
-              <p>No profiles yet. Add yourself, a family member, or a pet to begin.</p>
-              <button className="btn btn-primary" onClick={() => setShowAddProfile(true)}>
-                Add your first profile
+              <p>That profile no longer exists.</p>
+              <button className="btn btn-primary" onClick={() => setActiveProfileId(null)}>
+                Back to home
               </button>
             </div>
           )}
@@ -445,6 +485,122 @@ export default function RefillLedger() {
       )}
 
       {toast && <div className="toast">{toast}</div>}
+    </div>
+  );
+}
+
+function Dashboard({ data, windowDays, setWindowDays, onSelectProfile, onAddProfile }) {
+  const today = todayISO();
+
+  const upcoming = [];
+  data.medications.forEach((med) => {
+    const profile = data.profiles.find((p) => p.id === med.profileId);
+    const schedule = computeSchedule(med);
+    schedule.reminders.forEach((r) => {
+      const diff = daysBetween(today, r.date);
+      if (diff >= 0 && diff <= windowDays) {
+        upcoming.push({
+          date: r.date,
+          diff,
+          profileName: profile ? profile.name : "Unassigned",
+          profileId: med.profileId,
+          medName: med.name,
+          isDoctor: !!r.isDoctor,
+          detail: r.detail,
+        });
+      }
+    });
+  });
+  upcoming.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
+  return (
+    <div className="dashboard">
+      <div className="section-row">
+        <h2>Household overview</h2>
+        <div className="section-actions">
+          <button className="btn btn-primary small" onClick={onAddProfile}>
+            + Add person or pet
+          </button>
+        </div>
+      </div>
+
+      {data.profiles.length === 0 && (
+        <div className="empty-state">
+          <p>No profiles yet. Add yourself, a family member, or a pet to begin.</p>
+          <button className="btn btn-primary" onClick={onAddProfile}>
+            Add your first profile
+          </button>
+        </div>
+      )}
+
+      {data.profiles.length > 0 && (
+        <div className="profile-chip-row">
+          {data.profiles.map((p) => (
+            <button key={p.id} className="profile-jump-chip" onClick={() => onSelectProfile(p.id)}>
+              <span className="profile-icon">
+                {p.type === "pet" ? <IconPaw size={14} /> : <IconPerson size={14} />}
+              </span>
+              {p.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="dashboard-table-header">
+        <h3>Upcoming due dates</h3>
+        <label className="window-select-label">
+          Show scripts due in the next{" "}
+          <select
+            className="window-select"
+            value={windowDays}
+            onChange={(e) => setWindowDays(Number(e.target.value))}
+          >
+            <option value={7}>7 days</option>
+            <option value={14}>14 days</option>
+            <option value={30}>30 days</option>
+            <option value={60}>60 days</option>
+            <option value={90}>90 days</option>
+          </select>
+        </label>
+      </div>
+
+      {upcoming.length === 0 ? (
+        <div className="empty-state small">
+          <p>Nothing due in the next {windowDays} days.</p>
+        </div>
+      ) : (
+        <div className="upcoming-table-wrap">
+          <table className="upcoming-table">
+            <thead>
+              <tr>
+                <th>Due date</th>
+                <th>Who</th>
+                <th>Medication</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {upcoming.map((item, idx) => (
+                <tr key={idx} onClick={() => onSelectProfile(item.profileId)}>
+                  <td>
+                    {formatDisplayDate(item.date)}
+                    <span className="days-away">
+                      {item.diff === 0 ? "today" : `in ${item.diff}d`}
+                    </span>
+                  </td>
+                  <td>{item.profileName}</td>
+                  <td>{item.medName}</td>
+                  <td>
+                    <span className={"action-chip " + (item.isDoctor ? "action-doctor" : "action-refill")}>
+                      {item.isDoctor ? "See doctor" : "Refill"}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -722,6 +878,26 @@ const CSS = `
 .empty-state { background: var(--surface); border:1px dashed var(--border); border-radius:12px; padding:2rem; text-align:center; color: var(--ink-soft); }
 .empty-state.small { padding:1.2rem; }
 .empty-state p { margin: 0 0 1rem; }
+
+.profile-chip-row { display:flex; flex-wrap:wrap; gap:0.5rem; margin-bottom:1.6rem; }
+.profile-jump-chip { display:flex; align-items:center; gap:0.4rem; padding:0.4rem 0.8rem; border-radius:99px; border:1px solid var(--border); background: var(--surface); color: var(--ink); font-size:0.85rem; font-weight:500; cursor:pointer; }
+.profile-jump-chip:hover { background: var(--surface-alt); }
+
+.dashboard-table-header { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.6rem; margin: 0.4rem 0 0.8rem; }
+.dashboard-table-header h3 { font-family:'Fraunces', serif; font-size:1.05rem; font-weight:600; margin:0; }
+.window-select-label { font-size:0.85rem; color: var(--ink-soft); display:flex; align-items:center; gap:0.4rem; }
+.window-select { font-family:'Inter', sans-serif; font-size:0.85rem; padding:0.3rem 0.5rem; border-radius:6px; border:1px solid var(--border); background: var(--surface); color: var(--ink); }
+
+.upcoming-table-wrap { background: var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+.upcoming-table { width:100%; border-collapse:collapse; font-size:0.88rem; }
+.upcoming-table thead th { text-align:left; padding:0.6rem 0.9rem; background: var(--surface-alt); font-size:0.72rem; text-transform:uppercase; letter-spacing:0.03em; color: var(--ink-soft); }
+.upcoming-table tbody tr { cursor:pointer; border-top:1px solid var(--border); }
+.upcoming-table tbody tr:hover { background: var(--surface-alt); }
+.upcoming-table td { padding:0.65rem 0.9rem; vertical-align:middle; }
+.days-away { display:block; font-size:0.72rem; color: var(--ink-soft); margin-top:0.1rem; }
+.action-chip { font-size:0.72rem; font-weight:600; padding:0.2rem 0.55rem; border-radius:99px; }
+.action-chip.action-refill { background:#E1EEE8; color: var(--sage-dark); }
+.action-chip.action-doctor { background:#EFE0F5; color:#7A3B90; }
 
 .med-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap:1rem; }
 .med-card { background: var(--surface); border:1px solid var(--border); border-radius:12px; padding:1.1rem; border-top:4px solid var(--sage); }
