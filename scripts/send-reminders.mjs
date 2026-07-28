@@ -1,26 +1,31 @@
 // Standalone script (not part of the browser app) meant to run on a daily
 // schedule via GitHub Actions. It reads the household's data straight out of
 // Supabase, runs it through the exact same scheduling logic the ledger UI
-// uses, and emails you (via Resend's API) about anything due today.
+// uses, and emails you (via your own Gmail account) about anything due today.
 //
 // Required environment variables (see .github/workflows/send-reminders.yml):
 //   SUPABASE_URL          - same as VITE_SUPABASE_URL
 //   SUPABASE_ANON_KEY      - same as VITE_SUPABASE_ANON_KEY
 //   HOUSEHOLD_CODE          - the household code this script should check
-//   RESEND_API_KEY          - from resend.com
-//   ALERT_EMAIL             - where to send reminder emails
-//   ALERT_FROM_EMAIL        - optional; defaults to Resend's shared test sender
+//   GMAIL_USER              - the Gmail address emails are sent FROM
+//   GMAIL_APP_PASSWORD      - a 16-character App Password (not your normal
+//                             Gmail password) — generate one at
+//                             myaccount.google.com/apppasswords, which
+//                             requires 2-Step Verification to be turned on
+//   ALERT_EMAIL             - optional fallback recipient for profiles with
+//                             no alertEmails of their own
 
 import { createClient } from "@supabase/supabase-js";
+import nodemailer from "nodemailer";
 import { computeSchedule, todayISO } from "../src/scheduleLogic.js";
 
 const {
   SUPABASE_URL,
   SUPABASE_ANON_KEY,
   HOUSEHOLD_CODE,
-  RESEND_API_KEY,
+  GMAIL_USER,
+  GMAIL_APP_PASSWORD,
   ALERT_EMAIL,
-  ALERT_FROM_EMAIL,
 } = process.env;
 
 function requireEnv(name, value) {
@@ -32,9 +37,10 @@ function requireEnv(name, value) {
 requireEnv("SUPABASE_URL", SUPABASE_URL);
 requireEnv("SUPABASE_ANON_KEY", SUPABASE_ANON_KEY);
 requireEnv("HOUSEHOLD_CODE", HOUSEHOLD_CODE);
-requireEnv("RESEND_API_KEY", RESEND_API_KEY);
-// ALERT_EMAIL is now optional — it's only used as a fallback for profiles
-// that don't have their own alertEmails set. If every profile has its own
+requireEnv("GMAIL_USER", GMAIL_USER);
+requireEnv("GMAIL_APP_PASSWORD", GMAIL_APP_PASSWORD);
+// ALERT_EMAIL is optional — it's only used as a fallback for profiles that
+// don't have their own alertEmails set. If every profile has its own
 // email(s) configured in the app, this can be left unset.
 if (!ALERT_EMAIL) {
   console.warn(
@@ -43,6 +49,11 @@ if (!ALERT_EMAIL) {
 }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD },
+});
 
 async function fetchHouseholdData() {
   const { data, error } = await supabase.rpc("get_household", { code: HOUSEHOLD_CODE });
@@ -54,23 +65,12 @@ async function fetchHouseholdData() {
 }
 
 async function sendEmail(to, subject, htmlBody) {
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${RESEND_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from: ALERT_FROM_EMAIL || "Refill Ledger <onboarding@resend.dev>",
-      to,
-      subject,
-      html: htmlBody,
-    }),
+  await transporter.sendMail({
+    from: `Refill Ledger <${GMAIL_USER}>`,
+    to: to.join(", "),
+    subject,
+    html: htmlBody,
   });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Resend API error (${res.status}): ${text}`);
-  }
 }
 
 function buildEmailHtml(profileName, items) {
