@@ -128,7 +128,7 @@ export default function RefillLedger() {
   const [editingMed, setEditingMed] = useState(null);
   const [newScriptMed, setNewScriptMed] = useState(null);
   const [toast, setToast] = useState(null);
-  const [windowDays, setWindowDays] = useState(14);
+  const [windowDays, setWindowDays] = useState(7);
 
   useEffect(() => {
     loadData().then((d) => {
@@ -561,6 +561,7 @@ function Dashboard({ data, windowDays, setWindowDays, onSelectProfile }) {
             <thead>
               <tr>
                 <th>Due date</th>
+                <th>Script runs out</th>
                 <th>Who</th>
                 <th>Medication</th>
                 <th>Action</th>
@@ -573,8 +574,8 @@ function Dashboard({ data, windowDays, setWindowDays, onSelectProfile }) {
                   className={item.diff < 0 ? "row-overdue" : ""}
                   onClick={() => onSelectProfile(item.profileId)}
                 >
+                  <td>{formatDisplayDate(item.date)}</td>
                   <td>
-                    {formatDisplayDate(item.date)}
                     <span className="days-away">
                       {item.diff < 0
                         ? `overdue by ${-item.diff}d`
@@ -921,7 +922,7 @@ const CSS = `
 .upcoming-table tbody tr { cursor:pointer; border-top:1px solid var(--border); }
 .upcoming-table tbody tr:hover { background: var(--surface-alt); }
 .upcoming-table td { padding:0.65rem 0.9rem; vertical-align:middle; }
-.days-away { display:block; font-size:0.72rem; color: var(--ink-soft); margin-top:0.1rem; }
+.days-away { font-size:0.82rem; color: var(--ink-soft); font-weight:500; }
 .upcoming-table tr.row-overdue { background: #FBEFEA; }
 .upcoming-table tr.row-overdue .days-away { color: var(--rust); font-weight:600; }
 .action-chip { font-size:0.72rem; font-weight:600; padding:0.2rem 0.55rem; border-radius:99px; }
