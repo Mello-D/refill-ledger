@@ -17,7 +17,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import nodemailer from "nodemailer";
-import { computeSchedule, todayISO } from "../src/scheduleLogic.js";
+import { computeSchedule, todayISO, daysBetween } from "../src/scheduleLogic.js";
 
 const {
   SUPABASE_URL,
@@ -76,11 +76,14 @@ async function sendEmail(to, subject, htmlBody) {
 function buildEmailHtml(profileName, items) {
   const rows = items
     .map(
-      ({ medName, reminder }) => `
+      ({ medName, reminder, daysOverdue }) => `
       <tr>
         <td style="padding:8px 12px;border-bottom:1px solid #eee;"><strong>${medName}</strong></td>
         <td style="padding:8px 12px;border-bottom:1px solid #eee;">${
           reminder.isDoctor ? "Book doctor appointment" : "Refill needed"
+        }</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #eee;">${
+          daysOverdue === 0 ? "First flagged today" : `Flagged ${daysOverdue} day${daysOverdue > 1 ? "s" : ""} ago`
         }</td>
         <td style="padding:8px 12px;border-bottom:1px solid #eee;">${reminder.detail}</td>
       </tr>`
@@ -90,11 +93,16 @@ function buildEmailHtml(profileName, items) {
   return `
     <div style="font-family:sans-serif;max-width:600px;">
       <h2 style="color:#3D6B5C;">The Refill Ledger — ${profileName}'s reminders for today</h2>
+      <p style="color:#6B6A5E;font-size:0.9em;">
+        These will keep appearing daily until the medication is marked as
+        collected (or a new script logged) in the app.
+      </p>
       <table style="width:100%;border-collapse:collapse;">
         <thead>
           <tr>
             <th style="text-align:left;padding:8px 12px;border-bottom:2px solid #3D6B5C;">Medication</th>
             <th style="text-align:left;padding:8px 12px;border-bottom:2px solid #3D6B5C;">Action</th>
+            <th style="text-align:left;padding:8px 12px;border-bottom:2px solid #3D6B5C;">Since</th>
             <th style="text-align:left;padding:8px 12px;border-bottom:2px solid #3D6B5C;">Details</th>
           </tr>
         </thead>
@@ -124,12 +132,18 @@ async function main() {
 
     const schedule = computeSchedule(med);
     for (const reminder of schedule.reminders) {
-      if (reminder.date !== today) continue;
+      const daysOverdue = daysBetween(reminder.date, today);
+      // Once a reminder's date has arrived, keep including it every day
+      // (not just the exact date) until the medication is actually
+      // collected/renewed — at which point computeSchedule recalculates
+      // fresh dates from the new lastFilledDate and this reminder simply
+      // stops existing. daysOverdue < 0 means the date hasn't arrived yet.
+      if (daysOverdue < 0) continue;
       const key = med.profileId || "unassigned";
       if (!byProfile.has(key)) {
         byProfile.set(key, { profileName, alertEmails, items: [] });
       }
-      byProfile.get(key).items.push({ medName: med.name, reminder });
+      byProfile.get(key).items.push({ medName: med.name, reminder, daysOverdue });
     }
   }
 

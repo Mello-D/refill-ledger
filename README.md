@@ -120,15 +120,19 @@ This runs entirely on GitHub's infrastructure, once a day, and emails you
 whenever something is due — no need to open the app or re-export a calendar
 file.
 
-### 1. Create a free Resend account
-1. Go to [resend.com](https://resend.com) and sign up (no card required).
-2. Go to **API Keys** → **Create API Key**, copy it — you'll only see it once.
+### 1. Create a Gmail App Password
+Sending is done through your own Gmail account (via SMTP) rather than a
+third-party email API — this avoids the "can only send to your own address"
+restriction that free-tier email APIs impose without a verified domain.
 
-Resend's free tier includes a shared testing sender
-(`onboarding@resend.dev`) that works without verifying your own domain,
-which is enough to get started. If emails land in spam initially, or you
-outgrow the shared sender, connecting your own domain (Resend's guide walks
-through it) improves deliverability — not required to get going, though.
+1. Turn on **2-Step Verification** on your Google account, if it isn't
+   already: [myaccount.google.com/security](https://myaccount.google.com/security)
+2. Go to [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
+3. Create a new App Password (choose "Mail" as the app). Copy the
+   16-character password shown — you'll only see it once.
+
+This is a separate password just for this script; it doesn't change or
+expose your normal Gmail login.
 
 ### 2. Add four more GitHub secrets
 Same place as before (**Settings** → **Secrets and variables** → **Actions**
@@ -137,15 +141,17 @@ Same place as before (**Settings** → **Secrets and variables** → **Actions**
 | Secret name | Value |
 |---|---|
 | `HOUSEHOLD_CODE` | the household code you set up in the app (e.g. `Test123`, or whatever you're actually using) |
-| `RESEND_API_KEY` | the key from step 1 |
-| `ALERT_EMAIL` | the email address you want reminders sent to |
+| `GMAIL_USER` | your Gmail address (this is what emails are sent *from*) |
+| `GMAIL_APP_PASSWORD` | the 16-character password from step 1 |
+| `ALERT_EMAIL` | optional fallback recipient for any profile with no email of its own |
 
 (`VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are reused from the ones
 you already added.)
 
 ### 3. That's it — it runs automatically
-`.github/workflows/send-reminders.yml` runs daily (07:00 UTC by default —
-edit the `cron` line in that file if you want a different local time) and
+`.github/workflows/send-reminders.yml` runs daily at 20:00 UTC (6:00am
+Brisbane/AEST — edit the `cron` line in that file if you want a different
+local time) and
 checks every medication for reminders due *that day*. If anything matches,
 you get one email listing everything due.
 
