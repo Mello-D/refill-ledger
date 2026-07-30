@@ -101,29 +101,21 @@ function IconEscript({ size = 14 }) {
 }
 
 function TabletGrid({ total, remaining, unit = "tablets" }) {
-  if (unit === "ml") {
-    return (
-      <div className="tablet-count">
-        <span className="tablet-count-num">{Math.round(remaining * 10) / 10}</span>
-        <span className="tablet-count-of"> / {total} mL</span>
+  const displayRemaining = unit === "ml" ? Math.round(remaining * 10) / 10 : Math.round(remaining);
+  const unitLabel = unit === "ml" ? "mL" : "tablets";
+  const pct = total > 0 ? Math.max(0, Math.min(100, (remaining / total) * 100)) : 0;
+
+  return (
+    <div className="tablet-count">
+      <div className="tablet-count-row">
+        <span className="tablet-count-num">{displayRemaining}</span>
+        <span className="tablet-count-of"> / {total} {unitLabel}</span>
       </div>
-    );
-  }
-  const cap = 40;
-  const showCount = total > cap;
-  if (showCount) {
-    return (
-      <div className="tablet-count">
-        <span className="tablet-count-num">{Math.round(remaining)}</span>
-        <span className="tablet-count-of"> / {total} tablets</span>
+      <div className="tablet-progress-track">
+        <div className="tablet-progress-fill" style={{ width: `${pct}%` }} />
       </div>
-    );
-  }
-  const dots = [];
-  for (let i = 0; i < total; i++) {
-    dots.push(<span key={i} className={"tab-dot" + (i < Math.round(remaining) ? " filled" : "")} />);
-  }
-  return <div className="tablet-grid">{dots}</div>;
+    </div>
+  );
 }
 
 // ---------- main component ----------
@@ -514,14 +506,13 @@ function Dashboard({ data, windowDays, setWindowDays, onSelectProfile }) {
     const profile = data.profiles.find((p) => p.id === med.profileId);
     const schedule = computeSchedule(med);
     schedule.reminders.forEach((r) => {
-      const diff = daysBetween(today, r.date);
-      // Include anything already due (diff can be negative) as well as
-      // anything due within the window — a reminder whose date has passed
-      // but hasn't been actioned yet is still relevant and shouldn't be
-      // hidden in favour of showing the *next* repeat's later reminder.
+      // Use the actual run-out date (when the last tablet/dose would be
+      // taken) rather than the reminder date — the reminder date is what
+      // the emails are for, this table is meant to show real deadlines.
+      const diff = daysBetween(today, r.runOutDate);
       if (diff <= windowDays) {
         upcoming.push({
-          date: r.date,
+          date: r.runOutDate,
           diff,
           profileName: profile ? profile.name : "Unassigned",
           profileId: med.profileId,
@@ -959,12 +950,12 @@ const CSS = `
 .status-pill.status-lastbox { background:#E3E7EF; color:#4B5A78; }
 .status-pill.status-ok { background:#E1EEE8; color: var(--sage-dark); }
 
-.tablet-grid { display:flex; flex-wrap:wrap; gap:3px; margin:0.6rem 0 0.8rem; }
-.tab-dot { width:8px; height:8px; border-radius:50%; background: var(--surface-alt); border:1px solid var(--border); }
-.tab-dot.filled { background: var(--sage); border-color: var(--sage); }
 .tablet-count { margin: 0.6rem 0 0.8rem; }
+.tablet-count-row { display:flex; align-items:baseline; margin-bottom:0.35rem; }
 .tablet-count-num { font-family:'Fraunces', serif; font-size:1.3rem; font-weight:700; color: var(--sage-dark); }
 .tablet-count-of { color: var(--ink-soft); font-size:0.85rem; }
+.tablet-progress-track { height:6px; border-radius:99px; background: var(--surface-alt); border:1px solid var(--border); overflow:hidden; }
+.tablet-progress-fill { height:100%; background: var(--sage); border-radius:99px; transition: width 0.2s ease; }
 
 .med-meta { display:flex; gap:1.2rem; margin-bottom:0.9rem; flex-wrap:wrap; }
 .meta-label { display:block; font-size:0.72rem; color: var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; }

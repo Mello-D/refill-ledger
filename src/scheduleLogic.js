@@ -34,29 +34,33 @@ export function computeSchedule(med) {
   let boxStart = med.lastFilledDate;
   let runOut = addDays(boxStart, daysPerBox);
 
-  // current box + each remaining repeat
-  for (let i = 0; i <= med.repeatsRemaining; i++) {
+  // One "refill" reminder per repeat actually available: box i's run-out
+  // date prompts collecting box i+1 using up one repeat. There are exactly
+  // med.repeatsRemaining such transitions (not repeatsRemaining + 1) —
+  // the box that uses the very last repeat has nothing further to collect,
+  // so it doesn't get its own "refill" reminder; it just marks where the
+  // doctor reminder's countdown starts.
+  for (let i = 0; i < med.repeatsRemaining; i++) {
     const reminderDate = addDays(runOut, -med.refillThresholdDays);
+    const repeatsLeftAfter = med.repeatsRemaining - i - 1;
     reminders.push({
       date: reminderDate,
       title: "{name} — refill needed",
       detail:
-        i < med.repeatsRemaining
-          ? `Supply runs out around ${formatDisplayDate(runOut)}. ${
-              med.repeatsRemaining - i
-            } repeat(s) left after this fill.`
-          : `Supply runs out around ${formatDisplayDate(runOut)}. This is the last repeat — collect it, then book a doctor visit.`,
+        repeatsLeftAfter > 0
+          ? `Supply runs out around ${formatDisplayDate(runOut)}. ${repeatsLeftAfter} repeat(s) left after this fill.`
+          : `Supply runs out around ${formatDisplayDate(runOut)}. This will be the last repeat — after collecting it, book a doctor visit for a new script.`,
       runOutDate: runOut,
-      isLast: i === med.repeatsRemaining,
+      isLast: repeatsLeftAfter === 0,
     });
     boxStart = runOut;
     runOut = addDays(boxStart, daysPerBox);
   }
 
-  // doctor visit reminder, ahead of final run-out
-  const finalRunOut = reminders.length
-    ? reminders[reminders.length - 1].runOutDate
-    : runOut;
+  // After the loop, `runOut` is the run-out date of the box that uses the
+  // very last repeat (or the current box's run-out, if there are no
+  // repeats at all) — this is when repeats are genuinely exhausted.
+  const finalRunOut = runOut;
   const doctorDate = addDays(finalRunOut, -med.doctorThresholdDays);
   reminders.push({
     date: doctorDate,
