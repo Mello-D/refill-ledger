@@ -127,6 +127,7 @@ export default function RefillLedger() {
   const [showAddMed, setShowAddMed] = useState(false);
   const [editingMed, setEditingMed] = useState(null);
   const [newScriptMed, setNewScriptMed] = useState(null);
+  const [adjustMed, setAdjustMed] = useState(null);
   const [toast, setToast] = useState(null);
   const [windowDays, setWindowDays] = useState(7);
 
@@ -199,20 +200,62 @@ export default function RefillLedger() {
     persist({ ...data, medications: data.medications.filter((m) => m.id !== id) });
   }
 
-  function markRefilled(med) {
+  function markRefilled(med, leftoverAmount) {
     if (med.repeatsRemaining <= 0) {
       showToast("No repeats left — use \"New script from doctor\" instead");
       return;
     }
+    const leftover = Math.max(0, Number(leftoverAmount) || 0);
+    const extraDays = med.tabletsPerDay > 0 ? leftover / med.tabletsPerDay : 0;
+    const newLastFilledDate = addDays(todayISO(), extraDays);
+    const unitLabel = med.unit === "ml" ? "mL" : "tablet(s)";
     const history = med.history || [];
     const updated = {
       ...med,
-      lastFilledDate: todayISO(),
+      lastFilledDate: newLastFilledDate,
       repeatsRemaining: Math.max(0, med.repeatsRemaining - 1),
-      history: [...history, { date: todayISO(), action: "Collected next box" }],
+      history: [
+        ...history,
+        {
+          date: todayISO(),
+          action:
+            leftover > 0
+              ? `Collected next box (${leftover} ${unitLabel} carried over from previous box)`
+              : "Collected next box",
+        },
+      ],
     };
     saveMed(updated);
-    showToast(`${med.name}: next box collected, repeats decreased by 1`);
+    showToast(
+      leftover > 0
+        ? `${med.name}: next box collected, ${leftover} ${unitLabel} carried over`
+        : `${med.name}: next box collected, repeats decreased by 1`
+    );
+  }
+
+  function adjustRemaining(med, actualRemaining) {
+    const clamped = Math.max(0, Number(actualRemaining) || 0);
+    // Work backwards from "I want tabletsRemaining to equal `clamped` as of
+    // today" to find the effective lastFilledDate that produces that,
+    // using the same box-size/day-rate math computeSchedule already uses
+    // elsewhere. This only corrects the current box's supply clock — it
+    // doesn't touch repeatsRemaining, since this isn't a refill event.
+    const daysSinceEffectiveFill =
+      med.tabletsPerDay > 0 ? (med.tabletsPerBox - clamped) / med.tabletsPerDay : 0;
+    const newLastFilledDate = addDays(todayISO(), -daysSinceEffectiveFill);
+    const unitLabel = med.unit === "ml" ? "mL" : "tablet(s)";
+    const history = med.history || [];
+    const updated = {
+      ...med,
+      lastFilledDate: newLastFilledDate,
+      history: [
+        ...history,
+        { date: todayISO(), action: `Manually corrected remaining to ${clamped} ${unitLabel}` },
+      ],
+    };
+    saveMed(updated);
+    setAdjustMed(null);
+    showToast(`${med.name}: remaining amount corrected to ${clamped} ${unitLabel}`);
   }
 
   function logNewScript(med, newRepeats, filledDate) {
@@ -430,7 +473,10 @@ export default function RefillLedger() {
 
                       <div className="med-actions">
                         {med.repeatsRemaining > 0 ? (
-                          <button className="btn btn-primary small" onClick={() => markRefilled(med)}>
+                          <button
+                            className="btn btn-primary small"
+                            onClick={() => markRefilled(med, computeSchedule(med).tabletsRemaining)}
+                          >
                             Collected next box
                           </button>
                         ) : (
@@ -446,6 +492,9 @@ export default function RefillLedger() {
                             log new script instead
                           </button>
                         )}
+                        <button className="link-btn" onClick={() => setAdjustMed(med)}>
+                          correct amount left
+                        </button>
                         <button className="link-btn" onClick={() => setEditingMed(med)}>
                           edit
                         </button>
@@ -482,6 +531,15 @@ export default function RefillLedger() {
             setEditingMed(null);
           }}
           onSave={saveMed}
+        />
+      )}
+
+      {adjustMed && (
+        <AdjustRemainingModal
+          med={adjustMed}
+          defaultRemaining={computeSchedule(adjustMed).tabletsRemaining}
+          onCancel={() => setAdjustMed(null)}
+          onConfirm={(actualRemaining) => adjustRemaining(adjustMed, actualRemaining)}
         />
       )}
 
@@ -802,6 +860,40 @@ function MedForm({ initial, profileId, onCancel, onSave }) {
         </button>
         <button className="btn btn-primary" disabled={!canSave} onClick={() => canSave && onSave(form)}>
           Save medication
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function AdjustRemainingModal({ med, defaultRemaining, onCancel, onConfirm }) {
+  const [actual, setActual] = useState(Math.round(defaultRemaining * 10) / 10);
+  const unitLabel = med.unit === "ml" ? "mL" : "tablets";
+
+  return (
+    <Modal title={`Correct remaining amount for ${med.name}`} onClose={onCancel}>
+      <p className="field-hint" style={{ marginTop: 0 }}>
+        Use this if the app's estimate doesn't match what you've actually counted —
+        e.g. after a manual stocktake. This only corrects the current supply
+        countdown; it doesn't change repeats or log a collection.
+      </p>
+      <label className="field-label">Actual {unitLabel} remaining right now</label>
+      <input
+        type="number"
+        min="0"
+        step={med.unit === "ml" ? "0.1" : "1"}
+        className="field-input"
+        value={actual}
+        onChange={(e) => setActual(Number(e.target.value))}
+        autoFocus
+      />
+      <p className="field-hint">Defaulted to the app's current estimate.</p>
+      <div className="modal-actions">
+        <button className="btn btn-ghost" onClick={onCancel}>
+          Cancel
+        </button>
+        <button className="btn btn-primary" onClick={() => onConfirm(actual)}>
+          Save correction
         </button>
       </div>
     </Modal>

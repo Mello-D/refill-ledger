@@ -73,11 +73,12 @@ async function sendEmail(to, subject, htmlBody) {
   });
 }
 
-function buildEmailHtml(profileName, items) {
+function buildEmailHtml(items) {
   const rows = items
     .map(
-      ({ medName, reminder, daysOverdue }) => `
+      ({ profileName, medName, reminder, daysOverdue }) => `
       <tr>
+        <td style="padding:8px 12px;border-bottom:1px solid #eee;">${profileName}</td>
         <td style="padding:8px 12px;border-bottom:1px solid #eee;"><strong>${medName}</strong></td>
         <td style="padding:8px 12px;border-bottom:1px solid #eee;">${
           reminder.isDoctor ? "Book doctor appointment" : "Refill needed"
@@ -91,15 +92,16 @@ function buildEmailHtml(profileName, items) {
     .join("");
 
   return `
-    <div style="font-family:sans-serif;max-width:600px;">
-      <h2 style="color:#3D6B5C;">The Refill Ledger — ${profileName}'s reminders for today</h2>
+    <div style="font-family:sans-serif;max-width:650px;">
+      <h2 style="color:#3D6B5C;">The Refill Ledger — today's reminders</h2>
       <p style="color:#6B6A5E;font-size:0.9em;">
-        These will keep appearing daily until the medication is marked as
+        These will keep appearing daily until each medication is marked as
         collected (or a new script logged) in the app.
       </p>
       <table style="width:100%;border-collapse:collapse;">
         <thead>
           <tr>
+            <th style="text-align:left;padding:8px 12px;border-bottom:2px solid #3D6B5C;">Who</th>
             <th style="text-align:left;padding:8px 12px;border-bottom:2px solid #3D6B5C;">Medication</th>
             <th style="text-align:left;padding:8px 12px;border-bottom:2px solid #3D6B5C;">Action</th>
             <th style="text-align:left;padding:8px 12px;border-bottom:2px solid #3D6B5C;">Since</th>
@@ -116,9 +118,11 @@ async function main() {
   const data = await fetchHouseholdData();
   const today = todayISO();
 
-  // Group today's reminders by profile, so each profile can be emailed to
-  // its own recipient list.
-  const byProfile = new Map(); // profileId -> { profileName, alertEmails, items: [] }
+  // Group today's reminders by recipient EMAIL ADDRESS rather than by
+  // profile — so if the same address is set on multiple profiles (or a
+  // profile has several due items), everything lands in one combined email
+  // with a table showing which profile/medication each row belongs to.
+  const byEmail = new Map(); // email -> items[]
 
   for (const med of data.medications) {
     const profile = data.profiles.find((p) => p.id === med.profileId);
@@ -130,6 +134,8 @@ async function main() {
         ? [ALERT_EMAIL]
         : [];
 
+    if (alertEmails.length === 0) continue;
+
     const schedule = computeSchedule(med);
     for (const reminder of schedule.reminders) {
       const daysOverdue = daysBetween(reminder.date, today);
@@ -139,32 +145,23 @@ async function main() {
       // fresh dates from the new lastFilledDate and this reminder simply
       // stops existing. daysOverdue < 0 means the date hasn't arrived yet.
       if (daysOverdue < 0) continue;
-      const key = med.profileId || "unassigned";
-      if (!byProfile.has(key)) {
-        byProfile.set(key, { profileName, alertEmails, items: [] });
+
+      for (const email of alertEmails) {
+        if (!byEmail.has(email)) byEmail.set(email, []);
+        byEmail.get(email).push({ profileName, medName: med.name, reminder, daysOverdue });
       }
-      byProfile.get(key).items.push({ medName: med.name, reminder, daysOverdue });
     }
   }
 
-  if (byProfile.size === 0) {
+  if (byEmail.size === 0) {
     console.log(`No reminders due today (${today}). Nothing to send.`);
     return;
   }
 
-  for (const [, { profileName, alertEmails, items }] of byProfile) {
-    if (alertEmails.length === 0) {
-      console.warn(
-        `Skipping ${items.length} reminder(s) for ${profileName} — no alertEmails set on this ` +
-          `profile and no default ALERT_EMAIL configured.`
-      );
-      continue;
-    }
-    const subject = `Refill Ledger: ${items.length} reminder${
-      items.length > 1 ? "s" : ""
-    } for ${profileName} today`;
-    await sendEmail(alertEmails, subject, buildEmailHtml(profileName, items));
-    console.log(`Sent email to ${alertEmails.join(", ")} for ${profileName} (${items.length} item(s)).`);
+  for (const [email, items] of byEmail) {
+    const subject = `Refill Ledger: ${items.length} reminder${items.length > 1 ? "s" : ""} today`;
+    await sendEmail([email], subject, buildEmailHtml(items));
+    console.log(`Sent email to ${email} (${items.length} item(s)).`);
   }
 }
 
